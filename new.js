@@ -7,7 +7,7 @@ const path = require('path');
 const port = 3000;
 const url = 'mongodb://localhost:27017';
 let db; // Define a global variable to hold the database connection
-
+ 
 // Connect to MongoDB at the start of the application
 MongoClient.connect(url)
   .then((client) => {
