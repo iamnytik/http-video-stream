@@ -1,65 +1,76 @@
-const express = require('express');//for routing
-const { MongoClient } = require('mongodb');//for mongodb
+const express = require('express');
+const { MongoClient, MongoRuntimeError } = require('mongodb');
 const mongodb = require('mongodb');
-const fs = require('fs');//for vedio streaming
+
+const fs = require('fs');
 const app = express();
 const path = require('path');
+const multer = require('multer');
 const port = 3000;
 const url = 'mongodb://localhost:27017';
-let db; // Define a global variable to hold the database connection
- 
+let db;
+
 // Connect to MongoDB at the start of the application
 MongoClient.connect(url)
   .then((client) => {
     console.log('Connected successfully to MongoDB');
-    db = client.db('videos'); // Store the database connection in the global variable
+    db = client.db('videos');
   })
   .catch((error) => {
     console.error('Error connecting to MongoDB:', error);
+    process.exit(1); // Exit the application if there's an error connecting to the database
   });
 
 app.get('/', (req, res) => {
-  // This renders the home page
-  console.log('cat');
-
-  // Use the path module to get the absolute path to the index.html file
   const indexPath = path.join(__dirname, './index.html');
-  // Send the index.html file as a response
   res.sendFile(indexPath);
 });
 
-app.get('/init-video', (req, res) => {
-  // This renders the upload video page and uploads the bigbuck.mp4
-  console.log('init-video');
+const upload = multer({ dest: 'uploads/' });
 
-
-  // Perform upload operations with the database
+app.post('/init-video', upload.single('video'), (req, res) => {
+  const originalFilename = req.file.originalname;
   const bucket = new mongodb.GridFSBucket(db);
-  const videoUploadStream = bucket.openUploadStream('bigbuck');
-  const videoReadStream = fs.createReadStream('./bigbuck.mp4');
-  videoReadStream.pipe(videoUploadStream);
-  console.log('upload done');  
-  res.redirect('/');
-    res.end();
+  const videoUploadStream = bucket.openUploadStream(originalFilename);
 
+  const videoReadStream = fs.createReadStream(req.file.path);
+
+  videoReadStream.pipe(videoUploadStream);
+
+  videoUploadStream.on('error', (error) => {
+    console.error('Error during video upload:', error);
+    res.sendStatus(500);
+  });
+
+  videoUploadStream.on('finish', () => {
+    console.log('Upload done');
+    fs.unlinkSync(req.file.path);
+    res.sendStatus(200);
+  });
 });
 
-app.get('/video', (req, res) => {
-  console.log('videos');
+app.get('/video/:filename', (req, res) => {
+  const filename = req.params.filename;
 
-  // Perform operations with the connected client
   const bucket = new mongodb.GridFSBucket(db);
-  const downloadStream = bucket.openDownloadStreamByName('bigbuck');
+  const downloadStream = bucket.openDownloadStreamByName(filename);
 
-  // Set the appropriate response headers for video streaming
+  downloadStream.on('error', (error) => {
+    if (error instanceof MongoRuntimeError && error.code === 'FileNotFound') {
+      console.error(`File not found in GridFS: ${filename}`, error);
+      res.sendStatus(404);
+    } else {
+      console.error(`Error during video streaming for ${filename}:`, error);
+      res.sendStatus(500);
+    }
+  });
+
   res.set('Content-Type', 'video/mp4');
-  res.set('Content-Disposition', 'inline; filename=bigbuck.mp4');
-
-  // Pipe the video data from MongoDB to the response object
+  res.set('Content-Disposition', `inline; filename=${filename}`);
   downloadStream.pipe(res);
 });
+
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
-
