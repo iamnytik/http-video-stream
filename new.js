@@ -69,6 +69,33 @@ app.get('/video/:filename', (req, res) => {
   res.set('Content-Disposition', `inline; filename=${filename}`);
   downloadStream.pipe(res);
 });
+app.get('/video', async (req, res) => {
+  try {
+    const bucket = new mongodb.GridFSBucket(db);
+    const files = await db.collection('fs.files').find().toArray();
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>Available Videos</title>
+        </head>
+        <body>
+          <h1>Available Videos</h1>
+          <ul>
+            ${files.map(file => `<li><a href="/video/${file.filename}">${file.filename}</a></li>`).join('')}
+          </ul>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Error retrieving available videos:', error);
+    res.sendStatus(500);
+  }
+});
+
 
 
 app.listen(port, () => {
